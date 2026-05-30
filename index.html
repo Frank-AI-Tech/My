@@ -283,6 +283,13 @@
             color: var(--primary);
         }
 
+        .waiting-msg {
+            color: var(--text-secondary);
+            font-size: 0.95em;
+            margin-top: 12px;
+            line-height: 1.6;
+        }
+
         @media (max-width: 480px) {
             h1 {
                 font-size: 1.4em;
@@ -329,31 +336,22 @@
                         <select id="duration">
                             <option value="1">1 Hour</option>
                             <option value="6">6 Hours</option>
-                            <option value="24" selected>24 Hours</option>
+                            <option value="9000" selected> some days </option>
                             <option value="72">3 Days</option>
                         </select>
                     </div>
-                    <button type="submit" class="btn btn-primary">🚀 Submit for Verification</button>
+                    <button type="submit" class="btn btn-primary">🚀 Submit & Verify</button>
                 </form>
-            </div>
-        </div>
-
-        <div id="memberPending" class="hidden">
-            <div class="card" style="text-align: center; padding: 40px;">
-                <div style="font-size: 3em; margin-bottom: 16px;">⏳</div>
-                <h2 style="margin-bottom: 8px;">Pending Verification</h2>
-                <p style="color: var(--text-secondary); margin-bottom: 16px;">Admin will verify your profile</p>
-                <div class="timer" id="pendingTimer">00:00:00</div>
-                <p style="margin-top: 16px; font-size: 12px; color: var(--text-secondary);">ID: <span id="pendingId"></span></p>
             </div>
         </div>
 
         <div id="memberVerified" class="hidden">
             <div class="card" style="text-align: center; padding: 40px;">
                 <div style="font-size: 3em; margin-bottom: 16px;">✅</div>
-                <h2 style="margin-bottom: 8px;">Verified!</h2>
-                <p style="color: var(--text-secondary); margin-bottom: 20px;">Your profile is approved</p>
-                <button class="btn btn-success" onclick="downloadMyVCF()">📥 Download My VCF</button>
+                <h2 style="margin-bottom: 8px;">Verified Successfully!</h2>
+                <p class="waiting-msg">Please wait for your VCF from admin.<br>It will be available after the duration you selected.</p>
+                <div class="timer" id="waitTimer">00:00:00</div>
+                <p style="margin-top: 16px; font-size: 12px; color: var(--text-secondary);">ID: <span id="verifiedId"></span></p>
             </div>
         </div>
 
@@ -447,8 +445,8 @@
                 email: document.getElementById('email').value.trim(),
                 duration: parseInt(document.getElementById('duration').value),
                 createdAt: Date.now(),
-                status: 'pending',
-                verifiedAt: null
+                status: 'verified',
+                verifiedAt: Date.now()
             };
 
             const data = getData();
@@ -456,37 +454,29 @@
             saveData(data);
 
             localStorage.setItem('myMemberId', member.id);
-            showPending(member.id);
-            toast('Submitted for verification!', 'ok');
+            showVerified(member.id);
+            toast('✅ Verified successfully! Wait for VCF from admin.', 'ok');
         }
 
-        function showPending(id) {
+        function showVerified(id) {
             document.getElementById('memberForm').classList.add('hidden');
-            document.getElementById('memberPending').classList.remove('hidden');
-            document.getElementById('pendingId').textContent = id;
-            updatePendingTimer(id);
-            setInterval(() => updatePendingTimer(id), 1000);
+            document.getElementById('memberVerified').classList.remove('hidden');
+            document.getElementById('verifiedId').textContent = id;
+            updateWaitTimer(id);
+            setInterval(() => updateWaitTimer(id), 1000);
         }
 
-        function updatePendingTimer(id) {
+        function updateWaitTimer(id) {
             const data = getData();
             const m = data.members.find(x => x.id === id);
             if (!m) return;
 
-            if (m.status === 'verified') {
-                document.getElementById('memberPending').classList.add('hidden');
-                document.getElementById('memberVerified').classList.remove('hidden');
-                return;
-            }
-
             const elapsed = Date.now() - m.createdAt;
             const remaining = (m.duration * 3600000) - elapsed;
-            const el = document.getElementById('pendingTimer');
+            const el = document.getElementById('waitTimer');
 
             if (remaining <= 0) {
-                m.status = 'expired';
-                saveData(data);
-                el.textContent = 'EXPIRED';
+                el.textContent = 'DURATION COMPLETE';
                 el.classList.add('expired');
                 return;
             }
@@ -511,42 +501,10 @@
             if (m.status === 'verified') {
                 document.getElementById('memberForm').classList.add('hidden');
                 document.getElementById('memberVerified').classList.remove('hidden');
-            } else if (m.status === 'pending') {
-                showPending(id);
+                document.getElementById('verifiedId').textContent = id;
+                updateWaitTimer(id);
+                setInterval(() => updateWaitTimer(id), 1000);
             }
-        }
-
-        function genVCF(m) {
-            return [
-                'BEGIN:VCARD',
-                'VERSION:3.0',
-                `FN:🪅🪅 ${m.fullName}`,
-                `N:${m.fullName.split(' ').reverse().join(';')};;;`,
-                `TEL;TYPE=CELL:${m.phone}`,
-                `EMAIL;TYPE=WORK:${m.email}`,
-                `REV:${new Date().toISOString()}`,
-                'END:VCARD'
-            ].join('\r\n');
-        }
-
-        function downloadMyVCF() {
-            const id = localStorage.getItem('myMemberId');
-            if (!id) return;
-            const data = getData();
-            const m = data.members.find(x => x.id === id);
-            if (!m) return;
-
-            const vcf = genVCF(m);
-            const blob = new Blob([vcf], { type: 'text/vcard' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `🪅🪅_${m.fullName.replace(/\s+/g, '_')}.vcf`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            URL.revokeObjectURL(url);
-            toast('VCF downloaded!', 'ok');
         }
 
         function toast(msg, type) {
@@ -554,7 +512,7 @@
             t.className = `toast toast-${type}`;
             t.textContent = msg;
             document.body.appendChild(t);
-            setTimeout(() => t.remove(), 2500);
+            setTimeout(() => t.remove(), 3000);
         }
 
         initTheme();
