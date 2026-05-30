@@ -302,16 +302,6 @@
             text-transform: uppercase;
         }
 
-        .badge-pending {
-            background: #fef3c7;
-            color: #92400e;
-        }
-
-        [data-theme="dark"] .badge-pending {
-            background: #451a03;
-            color: #fbbf24;
-        }
-
         .badge-verified {
             background: #d1fae5;
             color: #065f46;
@@ -320,6 +310,16 @@
         [data-theme="dark"] .badge-verified {
             background: #064e3b;
             color: #34d399;
+        }
+
+        .badge-ready {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        [data-theme="dark"] .badge-ready {
+            background: #1e3a5f;
+            color: #60a5fa;
         }
 
         .badge-expired {
@@ -359,6 +359,10 @@
 
         .timer.expired {
             color: var(--danger);
+        }
+
+        .timer.ready {
+            color: var(--success);
         }
 
         .actions {
@@ -516,12 +520,12 @@
                     <div class="stat-label">Total</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-num" id="statPending">0</div>
-                    <div class="stat-label">Pending</div>
+                    <div class="stat-num" id="statReady">0</div>
+                    <div class="stat-label">Ready for VCF</div>
                 </div>
                 <div class="stat-box">
-                    <div class="stat-num" id="statVerified">0</div>
-                    <div class="stat-label">Verified</div>
+                    <div class="stat-num" id="statWaiting">0</div>
+                    <div class="stat-label">Waiting</div>
                 </div>
             </div>
 
@@ -659,15 +663,22 @@
             refreshAdmin();
         }
 
+        function getMemberStatus(m) {
+            const elapsed = Date.now() - m.createdAt;
+            const remaining = (m.duration * 3600000) - elapsed;
+            if (remaining <= 0) return 'ready';
+            return 'waiting';
+        }
+
         function refreshAdmin() {
             const data = getData();
             const total = data.members.length;
-            const pending = data.members.filter(x => x.status === 'pending').length;
-            const verified = data.members.filter(x => x.status === 'verified').length;
+            const ready = data.members.filter(m => getMemberStatus(m) === 'ready').length;
+            const waiting = data.members.filter(m => getMemberStatus(m) === 'waiting').length;
 
             document.getElementById('statTotal').textContent = total;
-            document.getElementById('statPending').textContent = pending;
-            document.getElementById('statVerified').textContent = verified;
+            document.getElementById('statReady').textContent = ready;
+            document.getElementById('statWaiting').textContent = waiting;
 
             const list = document.getElementById('membersList');
             if (!total) {
@@ -675,26 +686,18 @@
                 return;
             }
 
-            const sorted = [...data.members].sort((a, b) => {
-                if (a.status === 'pending' && b.status !== 'pending') return -1;
-                if (a.status !== 'pending' && b.status === 'pending') return 1;
-                return b.createdAt - a.createdAt;
-            });
+            const sorted = [...data.members].sort((a, b) => b.createdAt - a.createdAt);
 
             list.innerHTML = sorted.map(m => {
+                const status = getMemberStatus(m);
                 const elapsed = Date.now() - m.createdAt;
                 const remaining = (m.duration * 3600000) - elapsed;
-
-                if (remaining <= 0 && m.status === 'pending') {
-                    m.status = 'expired';
-                    saveData(data);
-                }
 
                 return `
                 <div class="card member-card">
                     <div class="member-header">
                         <span class="member-name">🪅🪅 ${esc(m.fullName)}</span>
-                        <span class="badge badge-${m.status}">${m.status}</span>
+                        <span class="badge badge-${status}">${status}</span>
                     </div>
                     <div class="info-grid">
                         <div class="info-row"><span class="info-label">ID</span><span>${m.id}</span></div>
@@ -702,32 +705,20 @@
                         <div class="info-row"><span class="info-label">Email</span><span>${esc(m.email)}</span></div>
                         <div class="info-row"><span class="info-label">Duration</span><span>${m.duration} Hour(s)</span></div>
                         <div class="info-row"><span class="info-label">Submitted</span><span>${new Date(m.createdAt).toLocaleString()}</span></div>
-                        ${m.status === 'pending' ? `<div class="info-row"><span class="info-label">Time Left</span><span class="timer ${remaining <= 0 ? 'expired' : ''}">${fmtTime(remaining)}</span></div>` : ''}
-                        ${m.verifiedAt ? `<div class="info-row"><span class="info-label">Verified</span><span>${new Date(m.verifiedAt).toLocaleString()}</span></div>` : ''}
+                        <div class="info-row"><span class="info-label">Verified</span><span>${new Date(m.verifiedAt).toLocaleString()}</span></div>
+                        ${status === 'waiting' ? `<div class="info-row"><span class="info-label">Time Left</span><span class="timer">${fmtTime(remaining)}</span></div>` : ''}
+                        ${status === 'ready' ? `<div class="info-row"><span class="info-label">Status</span><span class="timer ready">✅ READY FOR VCF</span></div>` : ''}
                     </div>
                     <div class="actions">
-                        ${m.status === 'pending' ? `<button class="btn btn-success btn-sm" onclick="verifyMember('${m.id}')">✓ Verify</button>` : ''}
-                        ${m.status === 'verified' ? `
+                        ${status === 'ready' ? `
                             <button class="btn btn-primary btn-sm" onclick="previewVCF('${m.id}')">👁 Preview</button>
-                            <button class="btn btn-success btn-sm" onclick="dlMember('${m.id}')">⬇ Download</button>
-                            <button class="btn btn-primary btn-sm" onclick="shareMember('${m.id}')">📤 Share</button>
-                        ` : ''}
+                            <button class="btn btn-success btn-sm" onclick="dlMember('${m.id}')">⬇ Download VCF</button>
+                            <button class="btn btn-primary btn-sm" onclick="shareMember('${m.id}')">📤 Share VCF</button>
+                        ` : `<button class="btn btn-primary btn-sm" disabled style="opacity:0.5">⏳ Wait ${fmtTime(remaining)}</button>`}
                         <button class="btn btn-danger btn-sm" onclick="delMember('${m.id}')">🗑 Delete</button>
                     </div>
                 </div>`;
             }).join('');
-        }
-
-        function verifyMember(id) {
-            const data = getData();
-            const m = data.members.find(x => x.id === id);
-            if (m) {
-                m.status = 'verified';
-                m.verifiedAt = Date.now();
-                saveData(data);
-                refreshAdmin();
-                toast('Member verified!', 'ok');
-            }
         }
 
         function delMember(id) {
@@ -828,7 +819,7 @@
         }
 
         function fmtTime(ms) {
-            if (ms <= 0) return 'EXPIRED';
+            if (ms <= 0) return 'READY';
             const h = Math.floor(ms / 3600000);
             const m = Math.floor((ms % 3600000) / 60000);
             const s = Math.floor((ms % 60000) / 1000);
